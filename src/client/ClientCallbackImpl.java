@@ -8,20 +8,18 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class ClientCallbackImpl extends UnicastRemoteObject implements IClientCallback {
 
-
-    private final AtomicReference<String> PendingInvites = new AtomicReference<>();
-
-    public String getPendingInvites() throws RemoteException {
-      return  PendingInvites.get();
-    }
-
-    public void clearPendingInvites() throws RemoteException {
-        PendingInvites.setRelease(null);
-    }
-
+    private final AtomicReference<String> pendingInviteFrom = new AtomicReference<>();
 
     public ClientCallbackImpl() throws RemoteException {
         super();
+    }
+
+    public String getPendingInviteFrom() {
+        return pendingInviteFrom.get();
+    }
+
+    public void clearPendingInviteFrom() {
+        pendingInviteFrom.set(null);
     }
 
     @Override
@@ -41,14 +39,12 @@ public class ClientCallbackImpl extends UnicastRemoteObject implements IClientCa
 
     @Override
     public void onInviteReceived(String fromUsername) throws RemoteException {
-        PendingInvites.set(fromUsername);
-        System.out.println("[game] invite received from " + fromUsername);
+        pendingInviteFrom.set(fromUsername);
+        System.out.println("[invite] from " + fromUsername + " — type accept or decline");
     }
-
 
     @Override
     public List<Integer> getStats() throws RemoteException {
         return Collections.emptyList();
     }
-
 }

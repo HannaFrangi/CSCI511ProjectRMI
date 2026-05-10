@@ -12,13 +12,18 @@ public interface ILobbyService extends Remote {
 
     void register(String userName, IClientCallback callback) throws RemoteException;
 
+    /** Call periodically from the client so the server can evict dead connections. */
+    void heartbeat(String userName) throws RemoteException;
+
     void unregister(String userName) throws RemoteException;
 
-    void sendInvite (String fromUsername , String toUsername) throws RemoteException;
+    void sendInvite(String fromUsername, String toUsername) throws RemoteException;
 
     void acceptInvite(String inviteeUsername) throws RemoteException;
 
     void declineInvite(String inviteeUsername) throws RemoteException;
+
+    void leaveMatch(String username) throws RemoteException;
 
     List<String> listPlayers() throws RemoteException;
 }

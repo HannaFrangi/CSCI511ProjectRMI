@@ -7,6 +7,9 @@ import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.util.Scanner;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Client {
 
@@ -49,11 +52,25 @@ public class Client {
             }
 
             System.out.println("Registered as \"" + userName
-                    + "\". Commands: list, invite <name>, accept, decline, quit");
+                    + "\". Commands: list, invite <name>, accept, decline, leave, quit");
 
             final ILobbyService lobbyRef = lobby;
             final String nameRef = userName;
+            ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "client-heartbeat");
+                t.setDaemon(true);
+                return t;
+            });
+            heartbeat.scheduleAtFixedRate(() -> {
+                try {
+                    lobbyRef.heartbeat(nameRef);
+                } catch (RemoteException ignored) {
+                    // server down or evicted
+                }
+            }, 10, 10, TimeUnit.SECONDS);
+
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                heartbeat.shutdownNow();
                 try {
                     lobbyRef.unregister(nameRef);
                 } catch (RemoteException ignored) {
@@ -68,6 +85,7 @@ public class Client {
                 }
                 line = line.trim();
                 if (line.equalsIgnoreCase("quit")) {
+                    heartbeat.shutdownNow();
                     lobby.unregister(userName);
                     break;
                 }
@@ -78,7 +96,7 @@ public class Client {
                 if (line.equalsIgnoreCase("accept")) {
                     try {
                         lobby.acceptInvite(userName);
-                        callback.clearPendingInvites();
+                        callback.clearPendingInviteFrom();
                     } catch (RemoteException e) {
                         System.out.println("Accept failed: " + e.getMessage());
                     }
@@ -87,9 +105,17 @@ public class Client {
                 if (line.equalsIgnoreCase("decline")) {
                     try {
                         lobby.declineInvite(userName);
-                        callback.clearPendingInvites();
+                        callback.clearPendingInviteFrom();
                     } catch (RemoteException e) {
                         System.out.println("Decline failed: " + e.getMessage());
+                    }
+                    continue;
+                }
+                if (line.equalsIgnoreCase("leave")) {
+                    try {
+                        lobby.leaveMatch(userName);
+                    } catch (RemoteException e) {
+                        System.out.println("leave: " + e.getMessage());
                     }
                     continue;
                 }
@@ -111,7 +137,7 @@ public class Client {
                     }
                     continue;
                 }
-                System.out.println("Unknown command. Use: list, invite <name>, accept, decline, quit");
+                System.out.println("Unknown command. Use: list, invite <name>, accept, decline, leave, quit");
             }
 
         } catch (MalformedURLException e) {
