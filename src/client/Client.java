@@ -52,7 +52,8 @@ public class Client {
             }
 
             System.out.println("Registered as \"" + userName
-                    + "\". Commands: list, invite <name>, accept, decline, leave, quit");
+                    + "\". Commands: list, invite <name>, accept, decline, move <coord>, leave, quit");
+            System.out.println("Coords: column A-C then row 1-3 (e.g. B2). Inviter is X, goes first.");
 
             final ILobbyService lobbyRef = lobby;
             final String nameRef = userName;
@@ -119,6 +120,19 @@ public class Client {
                     }
                     continue;
                 }
+                if (line.length() >= 5 && line.substring(0, 5).equalsIgnoreCase("move ")) {
+                    String coord = line.substring(5).trim();
+                    if (coord.isEmpty()) {
+                        System.out.println("Usage: move <coord>  e.g. move B2");
+                        continue;
+                    }
+                    try {
+                        lobby.makeMove(userName, coord);
+                    } catch (RemoteException e) {
+                        System.out.println("Move failed: " + e.getMessage());
+                    }
+                    continue;
+                }
                 if (line.toLowerCase().startsWith("invite ")) {
                     String target = line.substring(7).trim();
                     if (target.isEmpty()) {
@@ -137,7 +151,7 @@ public class Client {
                     }
                     continue;
                 }
-                System.out.println("Unknown command. Use: list, invite <name>, accept, decline, leave, quit");
+                System.out.println("Unknown command. Use: list, invite <name>, accept, decline, move <coord>, leave, quit");
             }
 
         } catch (MalformedURLException e) {

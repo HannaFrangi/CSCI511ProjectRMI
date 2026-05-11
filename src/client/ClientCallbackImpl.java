@@ -44,6 +44,11 @@ public class ClientCallbackImpl extends UnicastRemoteObject implements IClientCa
     }
 
     @Override
+    public void onGameState(String state) throws RemoteException {
+        System.out.println("\n--- game ---\n" + state + "------------\n");
+    }
+
+    @Override
     public List<Integer> getStats() throws RemoteException {
         return Collections.emptyList();
     }

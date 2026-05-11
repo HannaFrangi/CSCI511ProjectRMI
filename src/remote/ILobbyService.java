@@ -12,7 +12,6 @@ public interface ILobbyService extends Remote {
 
     void register(String userName, IClientCallback callback) throws RemoteException;
 
-    /** Call periodically from the client so the server can evict dead connections. */
     void heartbeat(String userName) throws RemoteException;
 
     void unregister(String userName) throws RemoteException;
@@ -24,6 +23,8 @@ public interface ILobbyService extends Remote {
     void declineInvite(String inviteeUsername) throws RemoteException;
 
     void leaveMatch(String username) throws RemoteException;
+
+    void makeMove(String PlayerName , String coords) throws RemoteException;
 
     List<String> listPlayers() throws RemoteException;
 }

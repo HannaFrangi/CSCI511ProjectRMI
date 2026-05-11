@@ -13,5 +13,7 @@ public interface IClientCallback extends Remote {
 
     void onInviteReceived(String fromUsername) throws RemoteException;
 
+    void onGameState(String state) throws RemoteException;
+
     List<Integer> getStats() throws RemoteException;
 }

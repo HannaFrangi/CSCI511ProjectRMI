@@ -15,21 +15,20 @@ import java.util.concurrent.TimeUnit;
 import client.IClientCallback;
 import model.PlayerEntry;
 import model.PlayerStatusModel;
+import model.Xo;
 import remote.ILobbyService;
 
 public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyService {
 
     private static final long HEARTBEAT_TIMEOUT_MS = 45_000L;
     private static final long HEARTBEAT_CHECK_MS = 15_000L;
-
     private final ConcurrentHashMap<String, PlayerEntry> userList = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> lastHeartbeat = new ConcurrentHashMap<>();
-    /** Key = invited, value = inviter */
     private final ConcurrentHashMap<String, String> pendingInvites = new ConcurrentHashMap<>();
-    /** Symmetric: A -> B and B -> A while both are BUSY in the same stub match */
     private final ConcurrentHashMap<String, String> matchPartner = new ConcurrentHashMap<>();
     private final Object lobbyLock = new Object();
     private final ScheduledExecutorService heartbeatWatchdog;
+    private final ConcurrentHashMap<String, Xo> gameByPlayer = new ConcurrentHashMap<>();
 
     protected LobbyServiceImpl() throws RemoteException {
         super();
@@ -100,11 +99,6 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
         removeConnectedUser(userName.trim(), false);
     }
 
-    /**
-     * Removes a user: pending invites, match pair, user list, notifies others.
-     *
-     * @param timeout true if removal is due to missing heartbeats
-     */
     private void removeConnectedUser(String userName, boolean timeout) {
         if (userName == null || userName.isBlank()) {
             return;
@@ -116,6 +110,8 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
             partner = matchPartner.remove(userName);
             if (partner != null) {
                 matchPartner.remove(partner);
+                gameByPlayer.remove(userName);
+                gameByPlayer.remove(partner);
             }
             pendingInvites.remove(userName);
             Iterator<Map.Entry<String, String>> it = pendingInvites.entrySet().iterator();
@@ -130,7 +126,7 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
         PlayerEntry removed = userList.remove(userName);
         lastHeartbeat.remove(userName);
         if (removed == null) {
-        return;
+            return;
         }
 
         if (partner != null) {
@@ -224,6 +220,7 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
         String fromUsername;
         PlayerEntry inviterEntry;
         PlayerEntry inviteeEntry;
+        Xo game;
 
         synchronized (lobbyLock) {
             fromUsername = pendingInvites.get(inviteeUsername);
@@ -249,17 +246,23 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
 
             matchPartner.put(fromUsername, inviteeUsername);
             matchPartner.put(inviteeUsername, fromUsername);
+
+            game = new Xo(fromUsername, inviteeUsername);
+            gameByPlayer.put(fromUsername, game);
+            gameByPlayer.put(inviteeUsername, game);
         }
 
         System.out.println("Match starting: " + fromUsername + " vs " + inviteeUsername);
         boolean okInviter = notifyLobby(inviterEntry.getClientCallback(),
-                "Invite accepted by " + inviteeUsername + ". Game starting (stub).");
+                "Invite accepted by " + inviteeUsername + ". Game starting.");
         boolean okInvitee = notifyLobby(inviteeEntry.getClientCallback(),
-                "You accepted. Playing with " + fromUsername + " (stub).");
+                "You accepted. Playing with " + fromUsername + ".");
 
         if (!okInviter || !okInvitee) {
-            System.err.println("Post-accept callback failed; abandoning stub match.");
+            System.err.println("Post-accept callback failed; abandoning match.");
             abandonStubMatch(fromUsername, inviteeUsername);
+        } else {
+            pushGameStateBoth(game);
         }
     }
 
@@ -318,6 +321,8 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
                 throw new RemoteException("You are not in a match");
             }
             matchPartner.remove(partner);
+            gameByPlayer.remove(username);
+            gameByPlayer.remove(partner);
 
             selfEntry = userList.get(username);
             partnerEntry = userList.get(partner);
@@ -345,6 +350,61 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
     }
 
     @Override
+    public void makeMove(String playerName, String coords) throws RemoteException {
+        if (playerName == null) {
+            throw new RemoteException("Player name cannot be null");
+        }
+        if (coords == null) {
+            throw new RemoteException("Coords cannot be null");
+        }
+        String player = playerName.trim();
+        if (player.isEmpty()) {
+            throw new RemoteException("Player name cannot be empty");
+        }
+        String coordTrim = coords.trim();
+        if (coordTrim.isEmpty()) {
+            throw new RemoteException("Coords cannot be empty");
+        }
+
+        String moveResult;
+        Xo game;
+        PlayerEntry entryX;
+        PlayerEntry entryO;
+
+        synchronized (lobbyLock) {
+            game = gameByPlayer.get(player);
+            if (game == null) {
+                throw new RemoteException("Not in a game");
+            }
+            try {
+                moveResult = game.applyMove(player, coordTrim);
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                throw new RemoteException(e.getMessage());
+            }
+
+            entryX = userList.get(game.getPlayerX());
+            entryO = userList.get(game.getPlayerO());
+            if (entryX == null || entryO == null) {
+                throw new RemoteException("Opponent no longer registered");
+            }
+
+            if (moveResult != null) {
+                finishMatchAfterGame(game.getPlayerX(), game.getPlayerO());
+            }
+        }
+
+        String snapX = game.formatSnapshot(game.getPlayerX());
+        String snapO = game.formatSnapshot(game.getPlayerO());
+        notifyGameStateQuiet(entryX.getClientCallback(), snapX);
+        notifyGameStateQuiet(entryO.getClientCallback(), snapO);
+
+        if (moveResult != null) {
+            notifyMatchFinishQuiet(entryX.getClientCallback());
+            notifyMatchFinishQuiet(entryO.getClientCallback());
+        }
+    }
+
+    @Override
     public List<String> listPlayers() throws RemoteException {
         List<String> keys = new ArrayList<>(userList.keySet());
         Collections.sort(keys);
@@ -357,10 +417,29 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
         return x;
     }
 
+    /** Must be called with {@code lobbyLock} held. */
+    private void finishMatchAfterGame(String nameX, String nameO) {
+        matchPartner.remove(nameX);
+        matchPartner.remove(nameO);
+        gameByPlayer.remove(nameX);
+        gameByPlayer.remove(nameO);
+        PlayerEntry ex = userList.get(nameX);
+        PlayerEntry eo = userList.get(nameO);
+        if (ex != null) {
+            ex.setStatus(PlayerStatusModel.ONLINE);
+        }
+        if (eo != null) {
+            eo.setStatus(PlayerStatusModel.ONLINE);
+        }
+        System.out.println("Game finished: " + nameX + " vs " + nameO);
+    }
+
     private void abandonStubMatch(String a, String b) {
         synchronized (lobbyLock) {
             matchPartner.remove(a);
             matchPartner.remove(b);
+            gameByPlayer.remove(a);
+            gameByPlayer.remove(b);
             PlayerEntry ea = userList.get(a);
             PlayerEntry eb = userList.get(b);
             if (ea != null) {
@@ -370,7 +449,41 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
                 eb.setStatus(PlayerStatusModel.ONLINE);
             }
         }
-        System.out.println("Stub match abandoned: " + a + " vs " + b);
+        System.out.println("Match abandoned: " + a + " vs " + b);
+    }
+
+    private void pushGameStateBoth(Xo game) {
+        String nameX = game.getPlayerX();
+        String nameO = game.getPlayerO();
+        PlayerEntry ex = userList.get(nameX);
+        PlayerEntry eo = userList.get(nameO);
+        if (ex == null || eo == null) {
+            return;
+        }
+        notifyGameStateQuiet(ex.getClientCallback(), game.formatSnapshot(nameX));
+        notifyGameStateQuiet(eo.getClientCallback(), game.formatSnapshot(nameO));
+    }
+
+    private static void notifyGameStateQuiet(IClientCallback callback, String snapshot) {
+        if (callback == null) {
+            return;
+        }
+        try {
+            callback.onGameState(snapshot);
+        } catch (RemoteException e) {
+            System.err.println("onGameState failed: " + e.getMessage());
+        }
+    }
+
+    private static void notifyMatchFinishQuiet(IClientCallback callback) {
+        if (callback == null) {
+            return;
+        }
+        try {
+            callback.onMatchFinish();
+        } catch (RemoteException e) {
+            System.err.println("onMatchFinish failed: " + e.getMessage());
+        }
     }
 
     private static boolean notifyLobby(IClientCallback callback, String message) {
