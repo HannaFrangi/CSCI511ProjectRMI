@@ -38,7 +38,6 @@ public class PlayerScore {
         this.draws = draws;
     }
 
-
     public PlayerScore(String username, int draws, int losses, int wins) {
         Username = username;
         this.draws = draws;
@@ -48,6 +47,6 @@ public class PlayerScore {
 
 
     public String toDisplayLine() {
-        return this.Username + "has won : " + this.wins + " .Lost " + this.losses + " Draws " + this.draws;
+        return "[Score]:" +  this.Username + " has won : " + this.wins + " .Lost " + this.losses + " Draws " + this.draws;
     }
 }

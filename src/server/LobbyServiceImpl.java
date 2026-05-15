@@ -29,9 +29,11 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
     private final Object lobbyLock = new Object();
     private final ScheduledExecutorService heartbeatWatchdog;
     private final ConcurrentHashMap<String, Xo> gameByPlayer = new ConcurrentHashMap<>();
+    private final ScoreStore scoreStore = new ScoreStore("scores.csv");
 
     protected LobbyServiceImpl() throws RemoteException {
         super();
+        scoreStore.load();
         heartbeatWatchdog = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "lobby-heartbeat");
             t.setDaemon(true);
@@ -399,6 +401,7 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
         notifyGameStateQuiet(entryO.getClientCallback(), snapO);
 
         if (moveResult != null) {
+            scoreStore.recordGameEnd(moveResult, game.getPlayerX(), game.getPlayerO());
             notifyMatchFinishQuiet(entryX.getClientCallback());
             notifyMatchFinishQuiet(entryO.getClientCallback());
         }
@@ -415,6 +418,11 @@ public class LobbyServiceImpl extends UnicastRemoteObject implements ILobbyServi
         }
         System.out.println("listPlayers -> " + x);
         return x;
+    }
+
+    @Override
+    public List<String> getLeaderboard() throws RemoteException {
+        return scoreStore.getLeaderboardLines();
     }
 
     /** Must be called with {@code lobbyLock} held. */

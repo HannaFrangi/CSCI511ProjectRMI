@@ -7,7 +7,7 @@ import java.rmi.registry.LocateRegistry;
 import java.util.Scanner;
 
 public class Server {
-    public static void main(String[] args) throws RemoteException {
+    static void main(String[] args) throws RemoteException {
         int port = 6666;
         String name = "lobby";
         try {

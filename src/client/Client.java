@@ -6,6 +6,7 @@ import java.net.MalformedURLException;
 import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
+import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -18,7 +19,7 @@ public class Client {
         return msg != null && msg.contains("Username already in use");
     }
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         System.setProperty("java.rmi.server.hostname", "127.0.0.1");
 
         Scanner x = new Scanner(System.in);
@@ -52,7 +53,7 @@ public class Client {
             }
 
             System.out.println("Registered as \"" + userName
-                    + "\". Commands: list, invite <name>, accept, decline, move <coord>, leave, quit");
+                    + "\". Commands: list, scores, invite <name>, accept, decline, move <coord>, leave, quit");
             System.out.println("Coords: column A-C then row 1-3 (e.g. B2). Inviter is X, goes first.");
 
             final ILobbyService lobbyRef = lobby;
@@ -92,6 +93,21 @@ public class Client {
                 }
                 if (line.equalsIgnoreCase("list")) {
                     System.out.println(lobby.listPlayers());
+                    continue;
+                }
+                if (line.equalsIgnoreCase("scores")) {
+                    try {
+                        List<String> board = lobby.getLeaderboard();
+                        if (board.isEmpty()) {
+                            System.out.println("No scores yet.");
+                        } else {
+                            for (String row : board) {
+                                System.out.println(row);
+                            }
+                        }
+                    } catch (RemoteException e) {
+                        System.out.println("Scores failed: " + e.getMessage());
+                    }
                     continue;
                 }
                 if (line.equalsIgnoreCase("accept")) {
@@ -151,7 +167,7 @@ public class Client {
                     }
                     continue;
                 }
-                System.out.println("Unknown command. Use: list, invite <name>, accept, decline, move <coord>, leave, quit");
+                System.out.println("Unknown command. Use: list, scores, invite <name>, accept, decline, move <coord>, leave, quit");
             }
 
         } catch (MalformedURLException e) {

@@ -13,7 +13,7 @@ public class Xo {
 
     private final String PlayerX;
     private final String PlayerO;
-    private char[] cells = new char[9];
+    private final char[] cells = new char[9];
     private char turn = 'X';
     private boolean over;
     private boolean draw;

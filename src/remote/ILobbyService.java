@@ -27,4 +27,6 @@ public interface ILobbyService extends Remote {
     void makeMove(String PlayerName , String coords) throws RemoteException;
 
     List<String> listPlayers() throws RemoteException;
+
+    List<String> getLeaderboard() throws RemoteException;
 }
